@@ -1,20 +1,27 @@
+from __future__ import annotations
+
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+
+from app.db.models import User
 from app.schemas.users import UserCreate, UserOut
 
 
 class UsersService:
-    def __init__(self) -> None:
-        self._users: list[UserOut] = []
-        self._next_user_id = 1
+    def create_user(self, db: Session, payload: UserCreate) -> UserOut:
+        # Optional but professional: prevent duplicate email
+        existing = db.execute(select(User).where(User.email == payload.email)).scalar_one_or_none()
+        if existing:
+            # keep it simple for now (we'll upgrade to proper HTTP errors next)
+            raise ValueError("Email already exists")
 
-    def create_user(self, payload: UserCreate) -> UserOut:
-        user = UserOut(
-            id=self._next_user_id,
-            name=payload.name,
-            email=payload.email,
-        )
-        self._next_user_id += 1
-        self._users.append(user)
-        return user
+        user = User(name=payload.name, email=str(payload.email))
+        db.add(user)
+        db.commit()
+        db.refresh(user)
 
-    def list_users(self) -> list[UserOut]:
-        return self._users
+        return UserOut(id=user.id, name=user.name, email=user.email)
+
+    def list_users(self, db: Session) -> list[UserOut]:
+        users = db.execute(select(User).order_by(User.id)).scalars().all()
+        return [UserOut(id=u.id, name=u.name, email=u.email) for u in users]
